@@ -4,26 +4,22 @@ chcp 65001 >nul
 echo Vérification de l'installation de Python...
 
 :: Vérifier si Python est installé
-python --version >nul 2>&1
+where python >nul 2>&1
 if %errorlevel% neq 0 (
-    echo Python n'est pas installé. Téléchargement en cours...
-    start "" https://www.python.org/ftp/python/3.11.0/python-3.11.0-amd64.exe
-    echo Installez Python puis relancez ce script.
-    pause
-    exit
+    echo Python n'est pas installé. Installation automatique en cours...
+    powershell -Command "& {[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri 'https://www.python.org/ftp/python/3.11.0/python-3.11.0-amd64.exe' -OutFile 'python_installer.exe'}"
+    start /wait python_installer.exe /quiet InstallAllUsers=1 PrependPath=1
+    del python_installer.exe
+    echo Python a été installé avec succès.
 )
 
 :: Vérifier si pip est installé
-pip --version >nul 2>&1
-if %errorlevel% neq 0 (
-    echo Pip n'est pas installé. Installation en cours...
-    python -m ensurepip --default-pip
-)
+python -m ensurepip --default-pip >nul 2>&1
+python -m pip install --upgrade pip >nul 2>&1
 
 :: Installer les dépendances Python
 echo Installation des dépendances...
-pip install --upgrade pip
-pip install yfinance pandas numpy ta pyTelegramBotAPI
+python -m pip install yfinance pandas numpy ta pyTelegramBotAPI >nul 2>&1
 
 :: Création du script Python
 echo import os > trading_bot.py
@@ -101,7 +97,7 @@ echo.        time.sleep(60) >> trading_bot.py
 echo if __name__ == '__main__': >> trading_bot.py
 echo.    main() >> trading_bot.py
 
-:: Lancer le script Python
+:: Lancer le script Python en continu
 echo Lancement du bot...
 python trading_bot.py
 
