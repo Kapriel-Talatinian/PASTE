@@ -1,80 +1,101 @@
-@echo off
-title Bot Telegram Trading
-chcp 65001 >nul
-echo Vérification de l'installation de Python...
+import yfinance as yf
+import telebot
+import pandas as pd
+import numpy as np
+from ta.trend import ADXIndicator, MACD
+from ta.momentum import StochasticOscillator
+import time
 
-:: Vérifier si Python est installé
-where python >nul 2>&1
-if %errorlevel% neq 0 (
-    echo Python n'est pas installé. Installation automatique en cours...
-    powershell -Command "& {[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri 'https://www.python.org/ftp/python/3.11.0/python-3.11.0-amd64.exe' -OutFile 'python_installer.exe'}"
-    start /wait python_installer.exe /quiet InstallAllUsers=1 PrependPath=1
-    del python_installer.exe
-    echo Python a été installé avec succès.
+# Configuration du bot Telegram
+TELEGRAM_BOT_TOKEN = '7343754821:AAFxzk453jSeqQhz2IqxFKfOTV9_txYwKls'
+CHAT_ID = '-4508141227'
+bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN)
 
-    :: Déterminer le chemin exact de Python
-    for /f "delims=" %%i in ('where python') do set PYTHON_PATH=%%i
-    set PYTHON_DIR=%PYTHON_PATH%\..
+# Actifs surveillés
+SYMBOLS = {'XAU/USD': 'GC=F', 'NDX/USD': '^NDX'}
+TIMEFRAME = '1h'
+
+# Fonction pour récupérer les données de Yahoo Finance
+def get_data(symbol):
+    yf_symbol = SYMBOLS[symbol]
+    df = yf.download(yf_symbol, period='14d', interval='1h')
     
-    :: Ajouter Python au PATH immédiatement
-    setx PATH "%PATH%;%PYTHON_DIR%" /M
-    set "PATH=%PATH%;%PYTHON_DIR%"
-)
+    if df.empty:
+        return df  # Éviter les erreurs si pas de données
 
-:: Vérifier si Python est maintenant reconnu
-where python >nul 2>&1
-if %errorlevel% neq 0 (
-    echo Erreur : Python n'a pas été ajouté au PATH. Essayez de redémarrer votre PC.
-    pause
-    exit
-)
+    df = df[['Open', 'High', 'Low', 'Close', 'Volume']].dropna()
+    
+    for col in df.columns:
+        df[col] = df[col].astype(float).squeeze()
+    
+    return df
 
-:: Vérifier si pip est installé
-python -m ensurepip --default-pip >nul 2>&1
-python -m pip install --upgrade pip >nul 2>&1
+# Fonction pour calculer les indicateurs
+def calculate_indicators(df):
+    if df.empty:
+        return df  # Éviter une erreur si DataFrame vide
+    
+    adx = ADXIndicator(high=df['High'], low=df['Low'], close=df['Close'], window=14)
+    df['adx'] = adx.adx().astype(float).squeeze()
+    df['di+'] = adx.adx_pos().astype(float).squeeze()
+    df['di-'] = adx.adx_neg().astype(float).squeeze()
+    
+    macd = MACD(close=df['Close'])
+    df['macd'] = macd.macd().astype(float).squeeze()
+    df['macd_signal'] = macd.macd_signal().astype(float).squeeze()
+    df['macd_cross'] = np.where(df['macd'] > df['macd_signal'], 1, -1)
+    
+    stoch = StochasticOscillator(high=df['High'], low=df['Low'], close=df['Close'], window=14, smooth_window=3)
+    df['stoch_k'] = stoch.stoch().astype(float).squeeze()
+    df['stoch_d'] = stoch.stoch_signal().astype(float).squeeze()
+    
+    df['cog'] = df['Close'].rolling(window=10).mean().astype(float).squeeze()
+    
+    return df.dropna()
 
-:: Installer les dépendances Python
-echo Installation des dépendances...
-python -m pip install yfinance pandas numpy ta pyTelegramBotAPI >nul 2>&1
+# Vérification des signaux
+def check_signals(df):
+    latest = df.iloc[-1]
+    previous = df.iloc[-2]
+    
+    macd_bullish = previous['macd_cross'] == -1 and latest['macd_cross'] == 1
+    stoch_bullish = previous['stoch_k'] < previous['stoch_d'] and latest['stoch_k'] > latest['stoch_d']
+    cog_bullish = previous['Close'] < previous['cog'] and latest['Close'] > latest['cog']
+    
+    macd_bearish = previous['macd_cross'] == 1 and latest['macd_cross'] == -1
+    stoch_bearish = previous['stoch_k'] > previous['stoch_d'] and latest['stoch_k'] < latest['stoch_d']
+    cog_bearish = previous['Close'] > previous['cog'] and latest['Close'] < latest['cog']
+    
+    bullish_count = sum([macd_bullish, stoch_bullish, cog_bullish])
+    bearish_count = sum([macd_bearish, stoch_bearish, cog_bearish])
+    
+    adxr_trend_buy = latest['di+'] > latest['di-']
+    adxr_trend_sell = latest['di-'] > latest['di+']
+    
+    signal = None
+    if bullish_count >= 2 and adxr_trend_buy:
+        signal = "BUY"
+    elif bearish_count >= 2 and adxr_trend_sell:
+        signal = "SELL"
+    
+    return signal
 
-:: Création du script Python
-echo import os > trading_bot.py
-echo import yfinance as yf >> trading_bot.py
-echo import telebot >> trading_bot.py
-echo import pandas as pd >> trading_bot.py
-echo import numpy as np >> trading_bot.py
-echo from ta.trend import ADXIndicator, MACD >> trading_bot.py
-echo from ta.momentum import StochasticOscillator >> trading_bot.py
-echo import time >> trading_bot.py
+# Fonction principale
+def main():
+    while True:
+        for symbol in SYMBOLS.keys():
+            df = get_data(symbol)
+            df = calculate_indicators(df)
+            
+            if not df.empty:
+                signal = check_signals(df)
+                
+                if signal:
+                    message = f'📢 Signal {signal} détecté sur {symbol} ({TIMEFRAME})\n⚡ 2 indicateurs alignés + ADXR confirmé'
+                    bot.send_message(CHAT_ID, message)
+        
+        time.sleep(60)  # Vérifie les signaux toutes les minutes
 
-:: Configuration du bot Telegram
-echo TELEGRAM_BOT_TOKEN = '7343754821:AAFxzk453jSeqQhz2IqxFKfOTV9_txYwKls' >> trading_bot.py
-echo CHAT_ID = '-4508141227' >> trading_bot.py
-echo bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN) >> trading_bot.py
-
-:: Actifs surveillés
-echo SYMBOLS = {'XAU/USD': 'GC=F', 'NDX/USD': '^NDX'} >> trading_bot.py
-echo TIMEFRAME = '1h' >> trading_bot.py
-
-:: Fonction principale avec boucle infinie
-echo def main(): >> trading_bot.py
-echo.    while True: >> trading_bot.py
-echo.        for symbol in SYMBOLS.keys(): >> trading_bot.py
-echo.            df = get_data(symbol) >> trading_bot.py
-echo.            df = calculate_indicators(df) >> trading_bot.py
-echo.            if not df.empty: >> trading_bot.py
-echo.                signal = check_signals(df) >> trading_bot.py
-echo.                if signal: >> trading_bot.py
-echo.                    message = f'📢 Signal {signal} détecté sur {symbol} ({TIMEFRAME})\n⚡ 2 indicateurs alignés + ADXR confirmé' >> trading_bot.py
-echo.                    bot.send_message(CHAT_ID, message) >> trading_bot.py
-echo.        time.sleep(60) >> trading_bot.py
-
-:: Exécution du bot
-echo if __name__ == '__main__': >> trading_bot.py
-echo.    main() >> trading_bot.py
-
-:: Lancer le script Python
-echo Lancement du bot...
-python trading_bot.py
-
-pause
+# Exécuter le bot
+if __name__ == '__main__':
+    main()
