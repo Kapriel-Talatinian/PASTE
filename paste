@@ -1,1 +1,108 @@
-https://colab.research.google.com/drive/1bYgbF3SPNdd6uDGx2LG5NUl3fTeZGnRZ?usp=sharing
+@echo off
+title Bot Telegram Trading
+chcp 65001 >nul
+echo Vérification de l'installation de Python...
+
+:: Vérifier si Python est installé
+python --version >nul 2>&1
+if %errorlevel% neq 0 (
+    echo Python n'est pas installé. Téléchargement en cours...
+    start "" https://www.python.org/ftp/python/3.11.0/python-3.11.0-amd64.exe
+    echo Installez Python puis relancez ce script.
+    pause
+    exit
+)
+
+:: Vérifier si pip est installé
+pip --version >nul 2>&1
+if %errorlevel% neq 0 (
+    echo Pip n'est pas installé. Installation en cours...
+    python -m ensurepip --default-pip
+)
+
+:: Installer les dépendances Python
+echo Installation des dépendances...
+pip install --upgrade pip
+pip install yfinance pandas numpy ta pyTelegramBotAPI
+
+:: Création du script Python
+echo import os > trading_bot.py
+echo import yfinance as yf >> trading_bot.py
+echo import telebot >> trading_bot.py
+echo import pandas as pd >> trading_bot.py
+echo import numpy as np >> trading_bot.py
+echo from ta.trend import ADXIndicator, MACD >> trading_bot.py
+echo from ta.momentum import StochasticOscillator >> trading_bot.py
+echo import time >> trading_bot.py
+
+:: Configuration du bot Telegram
+echo TELEGRAM_BOT_TOKEN = '7343754821:AAFxzk453jSeqQhz2IqxFKfOTV9_txYwKls' >> trading_bot.py
+echo CHAT_ID = '-4508141227' >> trading_bot.py
+echo bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN) >> trading_bot.py
+
+:: Actifs surveillés
+echo SYMBOLS = {'XAU/USD': 'GC=F', 'NDX/USD': '^NDX'} >> trading_bot.py
+echo TIMEFRAME = '1h' >> trading_bot.py
+
+:: Fonction pour récupérer les données
+echo def get_data(symbol): >> trading_bot.py
+echo.    yf_symbol = SYMBOLS[symbol] >> trading_bot.py
+echo.    df = yf.download(yf_symbol, period='14d', interval='1h').dropna() >> trading_bot.py
+echo.    return df[['Open', 'High', 'Low', 'Close', 'Volume']] >> trading_bot.py
+
+:: Fonction pour calculer les indicateurs
+echo def calculate_indicators(df): >> trading_bot.py
+echo.    if df.empty: return df >> trading_bot.py
+echo.    adx = ADXIndicator(high=df['High'], low=df['Low'], close=df['Close'], window=14) >> trading_bot.py
+echo.    df['adx'] = adx.adx() >> trading_bot.py
+echo.    df['di+'] = adx.adx_pos() >> trading_bot.py
+echo.    df['di-'] = adx.adx_neg() >> trading_bot.py
+echo.    macd = MACD(close=df['Close']) >> trading_bot.py
+echo.    df['macd'] = macd.macd() >> trading_bot.py
+echo.    df['macd_signal'] = macd.macd_signal() >> trading_bot.py
+echo.    df['macd_cross'] = np.where(df['macd'] > df['macd_signal'], 1, -1) >> trading_bot.py
+echo.    return df.dropna() >> trading_bot.py
+
+:: Vérification des signaux
+echo def check_signals(df): >> trading_bot.py
+echo.    latest = df.iloc[-1] >> trading_bot.py
+echo.    previous = df.iloc[-2] >> trading_bot.py
+echo.    macd_bullish = previous['macd_cross'] == -1 and latest['macd_cross'] == 1 >> trading_bot.py
+echo.    stoch_bullish = previous['stoch_k'] < previous['stoch_d'] and latest['stoch_k'] > latest['stoch_d'] >> trading_bot.py
+echo.    cog_bullish = previous['Close'] < previous['cog'] and latest['Close'] > latest['cog'] >> trading_bot.py
+echo.    macd_bearish = previous['macd_cross'] == 1 and latest['macd_cross'] == -1 >> trading_bot.py
+echo.    stoch_bearish = previous['stoch_k'] > previous['stoch_d'] and latest['stoch_k'] < latest['stoch_d'] >> trading_bot.py
+echo.    cog_bearish = previous['Close'] > previous['cog'] and latest['Close'] < latest['cog'] >> trading_bot.py
+echo.    bullish_count = sum([macd_bullish, stoch_bullish, cog_bullish]) >> trading_bot.py
+echo.    bearish_count = sum([macd_bearish, stoch_bearish, cog_bearish]) >> trading_bot.py
+echo.    adxr_trend_buy = latest['di+'] > latest['di-'] >> trading_bot.py
+echo.    adxr_trend_sell = latest['di-'] > latest['di+'] >> trading_bot.py
+echo.    signal = None >> trading_bot.py
+echo.    if bullish_count >= 2 and adxr_trend_buy: >> trading_bot.py
+echo.        signal = "BUY" >> trading_bot.py
+echo.    elif bearish_count >= 2 and adxr_trend_sell: >> trading_bot.py
+echo.        signal = "SELL" >> trading_bot.py
+echo.    return signal >> trading_bot.py
+
+:: Fonction principale
+echo def main(): >> trading_bot.py
+echo.    while True: >> trading_bot.py
+echo.        for symbol in SYMBOLS.keys(): >> trading_bot.py
+echo.            df = get_data(symbol) >> trading_bot.py
+echo.            df = calculate_indicators(df) >> trading_bot.py
+echo.            if not df.empty: >> trading_bot.py
+echo.                signal = check_signals(df) >> trading_bot.py
+echo.                if signal: >> trading_bot.py
+echo.                    message = f'📢 Signal {signal} détecté sur {symbol} ({TIMEFRAME})\n⚡ 2 indicateurs alignés + ADXR confirmé' >> trading_bot.py
+echo.                    bot.send_message(CHAT_ID, message) >> trading_bot.py
+echo.        time.sleep(60) >> trading_bot.py
+
+:: Exécution du bot
+echo if __name__ == '__main__': >> trading_bot.py
+echo.    main() >> trading_bot.py
+
+:: Lancer le script Python
+echo Lancement du bot...
+python trading_bot.py
+
+pause
