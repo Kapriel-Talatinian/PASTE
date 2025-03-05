@@ -12,9 +12,21 @@ if %errorlevel% neq 0 (
     del python_installer.exe
     echo Python a été installé avec succès.
 
+    :: Déterminer le chemin exact de Python
+    for /f "delims=" %%i in ('where python') do set PYTHON_PATH=%%i
+    set PYTHON_DIR=%PYTHON_PATH%\..
+    
     :: Ajouter Python au PATH immédiatement
-    setx PATH "%PATH%;C:\Python311;C:\Python311\Scripts" /M
-    set "PATH=%PATH%;C:\Python311;C:\Python311\Scripts"
+    setx PATH "%PATH%;%PYTHON_DIR%" /M
+    set "PATH=%PATH%;%PYTHON_DIR%"
+)
+
+:: Vérifier si Python est maintenant reconnu
+where python >nul 2>&1
+if %errorlevel% neq 0 (
+    echo Erreur : Python n'a pas été ajouté au PATH. Essayez de redémarrer votre PC.
+    pause
+    exit
 )
 
 :: Vérifier si pip est installé
